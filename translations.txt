@@ -1,0 +1,65 @@
+# Better Ready Up translations (UTF-8)
+# these are machine translations and might be wrong or sound weird. feel free to fix them
+# edit the text after = without changing the keys or language codes
+# restart the game after editing this file
+# Ready / Locked In are handled by the game's own translations
+
+# English
+[en]
+Unready=Unready
+ForceReady=Force Ready (ALL)
+
+# German
+[de]
+Unready=Bereitschaft aufheben
+ForceReady=Alle bereit machen
+
+# Spanish (Latin America)
+[es-419]
+Unready=Cancelar preparación
+ForceReady=Preparar a todos
+
+# Spanish (Spain)
+[es-ES]
+Unready=Cancelar preparación
+ForceReady=Preparar a todos
+
+# French
+[fr]
+Unready=Annuler la préparation
+ForceReady=Mettre tout le monde prêt
+
+# Italian
+[it]
+Unready=Annulla preparazione
+ForceReady=Prepara tutti
+
+# Japanese
+[ja]
+Unready=準備を解除
+ForceReady=全員を準備完了にする
+
+# Korean
+[ko]
+Unready=준비 취소
+ForceReady=모두 준비 완료
+
+# Portuguese (Brazil)
+[pt-BR]
+Unready=Cancelar prontidão
+ForceReady=Deixar todos prontos
+
+# Russian
+[ru]
+Unready=Отменить готовность
+ForceReady=Подготовить всех
+
+# Turkish
+[tr]
+Unready=Hazır durumunu iptal et
+ForceReady=Herkesi hazır yap
+
+# Simplified Chinese
+[zh-CN]
+Unready=取消准备
+ForceReady=让所有人准备就绪
