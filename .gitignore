@@ -1,0 +1,11 @@
+BetterReadyUp.dll
+notes.txt
+oldversions/
+bin/
+obj/
+.vs/
+.vscode/
+.idea/
+*.tmp
+*.bak
+*~
