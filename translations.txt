@@ -7,7 +7,7 @@
 # English
 [en]
 Unready=Unready
-ForceReady=Force Ready (ALL)
+ForceReady=Force Ready
 
 # German
 [de]

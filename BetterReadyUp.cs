@@ -16,7 +16,7 @@ using TMPro;
 // Please feel free to suggest fixes to my code.
 namespace BetterReadyUp
 {
-    [BepInPlugin("com.jectu.betterreadyup", "Better Ready Up", "1.1.3")]
+    [BepInPlugin("com.jectu.betterreadyup", "Better Ready Up", "1.2.0")]
     [BepInDependency("com.rune580.riskofoptions", BepInDependency.DependencyFlags.SoftDependency)]
     public sealed class BetterReadyUpPlugin : BaseUnityPlugin
     {
@@ -25,6 +25,8 @@ namespace BetterReadyUp
         private Sprite optionsIconSprite;
         private ConfigEntry<int> multiplayerCountdown;
         private ConfigEntry<int> singleplayerCountdown;
+        private ConfigEntry<int> gameOverCountdown;
+        private ConfigEntry<bool> gameOverWaitForAll;
         private VoteController vote;
         private readonly Dictionary<string, Dictionary<string, string>> translations = new Dictionary<string, Dictionary<string, string>>(StringComparer.OrdinalIgnoreCase);
         private Button forceReadyButton;
@@ -57,16 +59,24 @@ namespace BetterReadyUp
         private void Awake()
         {
             multiplayerCountdown = Config.Bind("Multiplayer", "Ready Countdown Seconds", 5,
-                new ConfigDescription("Multiplayer: seconds after everyone readies before launch (host setting).",
+                new ConfigDescription("Server-side: seconds after everyone readies before launch.",
                     new AcceptableValueRange<int>(0, 60)));
 
+            gameOverCountdown = Config.Bind("Multiplayer", "Return Countdown Seconds", 60,
+                new ConfigDescription("Server-side: seconds to wait after the first player votes to return to the lobby from the run recap screen. Set to 0 to return immediately when any player clicks Continue. Ignored when Wait For All Players is enabled.",
+                    new AcceptableValueRange<int>(0, 180)));
+
+            gameOverWaitForAll = Config.Bind("Multiplayer", "Wait For All Players", false,
+                new ConfigDescription("Server-side: wait for every player to vote before returning to the lobby, without a countdown."));
+
             singleplayerCountdown = Config.Bind("Singleplayer", "Ready Countdown Seconds", 0,
-                new ConfigDescription("Single-player: seconds after pressing Ready before launch. Press Unready to cancel. Set to 0 to restore vanilla instant-start behaviour.",
+                new ConfigDescription("Client-side: seconds after pressing Ready before launch. Press Unready to cancel. Set to 0 to restore vanilla instant-start behaviour.",
                     new AcceptableValueRange<int>(0, 60)));
 
             LoadTranslations();
             TryRegisterOptionalRiskOfOptions();
 
+            On.RoR2.GameOverController.OnEnable += GameOverEnabled;
             On.RoR2.PreGameController.OnEnable += PreGameEnabled;
             On.RoR2.PreGameController.OnDisable += PreGameDisabled;
             On.RoR2.UI.CharacterSelectController.ClientSetReady += ClientSetReadyToggle;
@@ -77,6 +87,7 @@ namespace BetterReadyUp
         {
             DestroyForceReadyButton();
             DestroySoloTimer();
+            On.RoR2.GameOverController.OnEnable -= GameOverEnabled;
             On.RoR2.PreGameController.OnEnable -= PreGameEnabled;
             On.RoR2.PreGameController.OnDisable -= PreGameDisabled;
             On.RoR2.UI.CharacterSelectController.ClientSetReady -= ClientSetReadyToggle;
@@ -89,7 +100,7 @@ namespace BetterReadyUp
             string dllDirectory = Path.GetDirectoryName(GetType().Assembly.Location);
             string filePath = Path.Combine(dllDirectory, "translations.txt");
             if (!File.Exists(filePath)) filePath = Path.Combine(Path.GetDirectoryName(dllDirectory), "translations.txt");
-            if (!File.Exists(filePath)) { Logger.LogWarning("[BETTERREADYUP] translations.txt not found. Using English."); return; }
+            if (!File.Exists(filePath)) { Logger.LogWarning("translations.txt not found. Using English."); return; }
 
             try
             {
@@ -111,9 +122,9 @@ namespace BetterReadyUp
                     string value = line.Substring(equals + 1).Trim();
                     if (value.Length > 0) translations[language][key] = value;
                 }
-                Logger.LogInfo("[BETTERREADYUP] Loaded translations (" + translations.Count + " language sections) from " + filePath);
+                Logger.LogInfo("Loaded translations (" + translations.Count + " language sections) from " + filePath);
             }
-            catch (Exception ex) { Logger.LogWarning("[BETTERREADYUP] Failed to load translations: " + ex.Message); }
+            catch (Exception ex) { Logger.LogWarning("Failed to load translations: " + ex.Message); }
         }
 
         // use the games language and fall back to english if a translation is missing
@@ -127,7 +138,7 @@ namespace BetterReadyUp
             switch (key)
             {
                 case "Unready": return "Unready";
-                case "ForceReady": return "Force Ready (ALL)";
+                case "ForceReady": return "Force Ready";
                 default: return key;
             }
         }
@@ -149,7 +160,7 @@ namespace BetterReadyUp
                 }
                 if (!File.Exists(iconPath))
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Risk of Options icon.png not found.");
+                    Logger.LogWarning("Risk of Options icon.png not found.");
                     return;
                 }
 
@@ -157,7 +168,7 @@ namespace BetterReadyUp
                 optionsIconTexture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
                 if (!ImageConversion.LoadImage(optionsIconTexture, pngBytes, false))
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Risk of Options icon.png is invalid.");
+                    Logger.LogWarning("Risk of Options icon.png is invalid.");
                     UnityEngine.Object.Destroy(optionsIconTexture);
                     optionsIconTexture = null;
                     return;
@@ -171,7 +182,7 @@ namespace BetterReadyUp
                 Type settingsManager = Type.GetType("RiskOfOptions.ModSettingsManager, RiskOfOptions", false);
                 if (settingsManager == null)
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Risk of Options settings API not found.");
+                    Logger.LogWarning("Risk of Options settings API not found.");
                     return;
                 }
                 MethodInfo setIcon = settingsManager.GetMethod("SetModIcon",
@@ -179,14 +190,14 @@ namespace BetterReadyUp
                     new[] { typeof(Sprite), typeof(string), typeof(string) }, null);
                 if (setIcon == null)
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Risk of Options icon API not found.");
+                    Logger.LogWarning("Risk of Options icon API not found.");
                     return;
                 }
                 setIcon.Invoke(null, new object[] { optionsIconSprite, "com.jectu.betterreadyup", "Better Ready Up" });
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("[BETTERREADYUP] Risk of Options icon setup failed: " + ex);
+                Logger.LogWarning("Risk of Options icon setup failed: " + ex);
             }
         }
 
@@ -201,7 +212,7 @@ namespace BetterReadyUp
                 Type baseOptionType = Type.GetType("RiskOfOptions.Options.BaseOption, RiskOfOptions", false);
                 if (managerType == null || optionType == null || sliderConfigType == null || baseOptionType == null)
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Risk of Options slider API not found.");
+                    Logger.LogWarning("Risk of Options slider API not found.");
                     return;
                 }
 
@@ -210,41 +221,68 @@ namespace BetterReadyUp
                     new[] { baseOptionType, typeof(string), typeof(string) }, null);
                 if (addOption == null)
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Risk of Options AddOption API not found.");
+                    Logger.LogWarning("Risk of Options AddOption API not found.");
                     return;
                 }
 
                 ConstructorInfo sliderCtor = optionType.GetConstructor(new[] { typeof(ConfigEntry<int>), sliderConfigType });
                 if (sliderCtor == null)
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Risk of Options slider constructor not found.");
+                    Logger.LogWarning("Risk of Options slider constructor not found.");
                     return;
                 }
 
                 object multiConfig = Activator.CreateInstance(sliderConfigType);
                 object soloConfig = Activator.CreateInstance(sliderConfigType);
-                SetSliderBounds(sliderConfigType, multiConfig);
-                SetSliderBounds(sliderConfigType, soloConfig);
+                object gameOverConfig = Activator.CreateInstance(sliderConfigType);
+                SetSliderBounds(sliderConfigType, multiConfig, 0, 60);
+                SetSliderBounds(sliderConfigType, soloConfig, 0, 60);
+                SetSliderBounds(sliderConfigType, gameOverConfig, 0, 180);
 
                 object multiSlider = sliderCtor.Invoke(new object[] { multiplayerCountdown, multiConfig });
                 object soloSlider = sliderCtor.Invoke(new object[] { singleplayerCountdown, soloConfig });
+                object gameOverSlider = sliderCtor.Invoke(new object[] { gameOverCountdown, gameOverConfig });
                 object[] registration = { null, "com.jectu.betterreadyup", "Better Ready Up" };
                 registration[0] = multiSlider;
                 addOption.Invoke(null, registration);
                 registration[0] = soloSlider;
                 addOption.Invoke(null, registration);
+                registration[0] = gameOverSlider;
+                addOption.Invoke(null, registration);
+                TryRegisterOptionalGameOverCheckbox(addOption);
             }
             catch (Exception ex)
             {
-                Logger.LogWarning("[BETTERREADYUP] Risk of Options slider setup failed: " + ex);
+                Logger.LogWarning("Risk of Options slider setup failed: " + ex);
             }
         }
 
-        private static void SetSliderBounds(Type configType, object config)
+        //adds a checkbox to risk of options to enable or disable the optional game over "wait for all players" setting
+        private void TryRegisterOptionalGameOverCheckbox(MethodInfo addOption)
+        {
+            try
+            {
+                Type optionType = Type.GetType("RiskOfOptions.Options.CheckBoxOption, RiskOfOptions", false);
+                if (optionType == null) return;
+                Type configType = Type.GetType("RiskOfOptions.OptionConfigs.CheckBoxConfig, RiskOfOptions", false);
+                if (configType == null) return;
+                ConstructorInfo ctor = optionType.GetConstructor(new[] { typeof(ConfigEntry<bool>), configType });
+                if (ctor == null) return;
+                object checkbox = ctor.Invoke(new object[] {gameOverWaitForAll, Activator.CreateInstance(configType)});
+                addOption.Invoke(null, new object[] { checkbox, "com.jectu.betterreadyup", "Better Ready Up" });
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("Risk of Options Game Over checkbox setup failed: " + ex);
+            }
+        }
+
+        //making sure the sliders in risk of options makes sense for each config option
+        private static void SetSliderBounds(Type configType, object config, int min, int max)
         {
             foreach (string name in new[] { "min", "max" })
             {
-                int value = name == "min" ? 0 : 60;
+                int value = name == "min" ? min : max;
                 FieldInfo field = configType.GetField(name, BindingFlags.Public | BindingFlags.Instance);
                 if (field != null) field.SetValue(config, value);
                 else
@@ -255,6 +293,22 @@ namespace BetterReadyUp
                     property.SetValue(config, value, null);
                 }
             }
+        }
+
+        // modifying the games existing end of run vote to follow my new rules
+        private void GameOverEnabled(On.RoR2.GameOverController.orig_OnEnable orig, GameOverController self)
+        {
+            orig(self);
+            if (RoR2Application.isInSinglePlayer || !NetworkServer.active) return;
+            VoteController gameOverVote = self.GetComponent<VoteController>();
+            if (!gameOverVote) return;
+
+            gameOverVote.timerStartCondition = gameOverWaitForAll.Value
+                ? VoteController.TimerStartCondition.WhileAllVotesReceived
+                : VoteController.TimerStartCondition.WhileAnyVoteReceived;
+            gameOverVote.timeoutDuration = gameOverWaitForAll.Value ? 0f : gameOverCountdown.Value;
+            if (gameOverWaitForAll.Value)
+                gameOverVote.minimumTimeBeforeProcessing = 0f;
         }
 
         // let vanilla handle solo at 0, otherwise set up the vote timer
@@ -471,7 +525,7 @@ namespace BetterReadyUp
                     "SafeArea/ReadyPanel/VerticalLayoutGroup/VoteInfoPanel");
                 if (!source)
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Single-player timer panel not found.");
+                    Logger.LogWarning("Single-player timer panel not found.");
                     return;
                 }
 
@@ -513,13 +567,13 @@ namespace BetterReadyUp
                         }
                     }
                     if (!soloReadySprite)
-                        Logger.LogWarning("[BETTERREADYUP] Single-player ready icon not found.");
+                        Logger.LogWarning("Single-player ready icon not found.");
                 }
                 if (!soloVoteIcon)
-                    Logger.LogWarning("[BETTERREADYUP] Single-player status icon not found.");
+                    Logger.LogWarning("Single-player status icon not found.");
                 if (!soloTimerLabel)
                 {
-                    Logger.LogWarning("[BETTERREADYUP] Single-player timer label not found.");
+                    Logger.LogWarning("Single-player timer label not found.");
                     DestroySoloTimer();
                     return;
                 }
